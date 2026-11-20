@@ -60,9 +60,17 @@ jobs:
         working-directory: kernel
         run: |
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
-          make $ARGS -j$(nproc) Image.gz dtbs 2>&1 | tee build.log | tail -n 40
+          set +e
+          make $ARGS -j$(nproc) Image.gz dtbs > build.log 2>&1
+          RC=$?
+          if [ $RC -ne 0 ]; then
+            echo "=== FIRST ERRORS ==="
+            grep -nE "error:|Error [0-9]|undefined|No rule|fatal" build.log | head -30
+            echo "=== CONTEXT ==="
+            grep -n -m1 -B15 -A5 -E "error:|No rule|undefined" build.log
+            exit 1
+          fi
           ls -la out/arch/arm64/boot/
-          strings out/arch/arm64/boot/Image | grep -m1 "Linux version"
 
       - name: Package AnyKernel3 zip
         run: |
@@ -75,3 +83,4 @@ jobs:
         with:
           name: a52sxq-kernel
           path: a52sxq-ksunext-manualhook.zip
+          
