@@ -37,7 +37,7 @@ jobs:
 
       - name: Apply manual hooks
         working-directory: kernel
-        run: git apply --whitespace=nowarn ../patches/ksu-manual-hooks-5.4.302.patch
+        run: git apply --whitespace=nowarn ../ksu-manual-hooks-5.4.302.patch
 
       - name: Add KernelSU-Next
         working-directory: kernel
