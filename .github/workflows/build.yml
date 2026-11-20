@@ -64,12 +64,14 @@ jobs:
             scripts/config --file out/.config -e TCP_CONG_ADVANCED -e TCP_CONG_BBR -d DEFAULT_BIC -e DEFAULT_BBR \
               -e NET_SCH_FQ -e NET_SCH_FQ_CODEL -e NET_SCH_DEFAULT -e DEFAULT_FQ_CODEL
           fi
-          # Requested extras: CAKE, IFB, TTL/HL targets, USB RNDIS + ECM, Samsung MTP VID/PID
-          scripts/config --file out/.config -e NET_SCH_CAKE -e IFB -e NETFILTER_XT_TARGET_HL -e IP_NF_TARGET_TTL -e IP6_NF_TARGET_HL \
+          # Extras: CAKE, TTL/HL targets, Samsung MTP VID/PID.
+          # NOTE: IFB is intentionally NOT enabled: it selects NET_REDIRECT, which changes struct sk_buff
+          # and breaks the CRCs of the prebuilt vendor modules (wlan etc. fail to load -> bootloop).
+          scripts/config --file out/.config -e NET_SCH_CAKE -e NETFILTER_XT_TARGET_HL -e IP_NF_TARGET_TTL -e IP6_NF_TARGET_HL \
             -e USB_CONFIGFS_SAMSUNG_VIDPID
           if [ "${{ inputs.usb_extra }}" = "true" ]; then scripts/config --file out/.config -e USB_CONFIGFS_RNDIS -e USB_CONFIGFS_ECM; fi
           make $ARGS olddefconfig
-          grep -E "CONFIG_KSU|USERFAULTFD|DEFAULT_TCP_CONG|TCP_CONG_BBR|DEFAULT_NET_SCH|NET_SCH_FQ|NET_SCH_CAKE|CONFIG_IFB|TARGET_HL|TARGET_TTL|USB_CONFIGFS_(RNDIS|ECM|SAMSUNG)" out/.config
+          grep -E "CONFIG_KSU|USERFAULTFD|DEFAULT_TCP_CONG|TCP_CONG_BBR|DEFAULT_NET_SCH|NET_SCH_FQ|NET_SCH_CAKE|NET_REDIRECT|TARGET_HL|TARGET_TTL|USB_CONFIGFS_(RNDIS|ECM|SAMSUNG)" out/.config
 
       - name: Build
         working-directory: kernel
@@ -209,4 +211,3 @@ jobs:
         with:
           name: a52sxq-kernel-recovery
           path: pkg/
-        
