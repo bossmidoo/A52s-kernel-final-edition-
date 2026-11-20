@@ -1,0 +1,77 @@
+name: Build a52sxq kernel (KernelSU-Next manual hooks)
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_repo:
+        description: "Kernel repo"
+        default: "anhdat1024/android_kernel_samsung_sm7325"
+      kernel_branch:
+        description: "Kernel branch"
+        default: "17.0"
+      ksun_branch:
+        description: "KernelSU-Next branch (must be 'legacy' for manual hooks)"
+        default: "legacy"
+      disable_userfaultfd:
+        description: "Disable CONFIG_USERFAULTFD like CrappyKernel (true/false)"
+        default: "false"
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4          # this repo: patches/
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison flex libssl-dev libelf-dev cpio zip lz4 python3 device-tree-compiler
+
+      - name: Clone kernel
+        run: git clone --depth=1 -b "${{ inputs.kernel_branch }}" "https://github.com/${{ inputs.kernel_repo }}" kernel
+
+      - name: Clone toolchain (Proton clang) and AnyKernel3
+        run: |
+          git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3 ak3
+
+      - name: Apply manual hooks
+        working-directory: kernel
+        run: git apply --whitespace=nowarn ../patches/ksu-manual-hooks-5.4.302.patch
+
+      - name: Add KernelSU-Next
+        working-directory: kernel
+        run: |
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/${{ inputs.ksun_branch }}/kernel/setup.sh" | bash -s ${{ inputs.ksun_branch }}
+
+      - name: Configure
+        working-directory: kernel
+        run: |
+          export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
+          ARGS="O=out ARCH=arm64 LLVM=1 CC=clang CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-"
+          echo "ARGS=$ARGS" >> $GITHUB_ENV
+          make $ARGS vendor/lineage-a52sxq_defconfig
+          scripts/config --file out/.config -e KSU -e KSU_MANUAL_HOOK -d KSU_SUSFS -d KSU_KPROBES_HOOK
+          if [ "${{ inputs.disable_userfaultfd }}" = "true" ]; then scripts/config --file out/.config -d USERFAULTFD; fi
+          make $ARGS olddefconfig
+          grep -E "CONFIG_KSU|USERFAULTFD" out/.config
+
+      - name: Build
+        working-directory: kernel
+        run: |
+          export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
+          make $ARGS -j$(nproc) Image.gz dtbs 2>&1 | tee build.log | tail -n 40
+          ls -la out/arch/arm64/boot/
+          strings out/arch/arm64/boot/Image | grep -m1 "Linux version"
+
+      - name: Package AnyKernel3 zip
+        run: |
+          cd ak3 && rm -rf .git .github README.md
+          cp ../kernel/out/arch/arm64/boot/Image.gz-dtb . 2>/dev/null || cp ../kernel/out/arch/arm64/boot/Image.gz .
+          sed -i 's|^kernel.string=.*|kernel.string=a52sxq KSU-Next manual-hook|; s|^do.devicecheck=.*|do.devicecheck=1|; s|^device.name1=.*|device.name1=a52sxq|; s|^device.name2=.*|device.name2=a52sxqxx|; s|^block=.*|block=boot|; s|^is_slot_device=.*|is_slot_device=0|' anykernel.sh
+          zip -r9 ../a52sxq-ksunext-manualhook.zip . -x '.git*'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: a52sxq-kernel
+          path: a52sxq-ksunext-manualhook.zip
